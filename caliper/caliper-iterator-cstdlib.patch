@@ -1,0 +1,37 @@
+From af80b77af8e2b3d33748707882028a786dc6713a Mon Sep 17 00:00:00 2001
+From: adam-sim-dev <76020022+adam-sim-dev@users.noreply.github.com>
+Date: Tue, 8 Sep 2026 08:47:47 +0800
+Subject: [PATCH] Include <iterator> and <cstdlib> for Clang 23.1.0 (#757)
+
+* include <iterator>
+
+* #include <cstdlib>
+---
+ src/common/StringConverter.cpp | 1 +
+ src/common/util/demangle.cpp   | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/src/common/StringConverter.cpp b/src/common/StringConverter.cpp
+index 7bc4d695..a22290c9 100644
+--- a/src/common/StringConverter.cpp
++++ b/src/common/StringConverter.cpp
+@@ -10,6 +10,7 @@
+ 
+ #include <algorithm>
+ #include <cctype>
++#include <iterator>
+ #include <sstream>
+ 
+ cali_id_t cali::StringConverter::to_id() const
+diff --git a/src/common/util/demangle.cpp b/src/common/util/demangle.cpp
+index f79368e1..7307f241 100644
+--- a/src/common/util/demangle.cpp
++++ b/src/common/util/demangle.cpp
+@@ -7,6 +7,7 @@
+ #include <cxxabi.h>
+ #endif
+ 
++#include <cstdlib>
+ #include <cstring>
+ 
+ namespace cali

@@ -1,0 +1,96 @@
+# reflect-cpp for the hodgles conda channel (hodgles docs/architecture.md, Decisions:
+# Dependencies); README.md says how to build and publish it. reflect-cpp is not on
+# conda-forge; neither is yyjson (ctre is, 3.11.0). JSON only, with the
+# bundled yyjson 0.12.0, ctre and enchantum, so the package has no host
+# dependencies. Shared library, as conda-forge prefers; the compiled part is
+# small (reflectcpp.cpp, reflectcpp_json.cpp, yyjson.c), everything else is
+# templates in the headers.
+context:
+  version: 0.26.2
+
+package:
+  name: reflect-cpp
+  version: ${{ version }}
+
+source:
+  # The project moved from getml/reflect-cpp to munich-data-engineering
+  # (GitHub redirects). sha256 of the release tarball, 2026-10-27.
+  url: https://github.com/munich-data-engineering/reflect-cpp/archive/refs/tags/v${{ version }}.tar.gz
+  sha256: 13dc48d2c24be297898d9ddcea0b32be8652ab9c7811e5540eb72db921d44da2
+  patches:
+    # to_schema dereferenced a null alternative for a TaggedUnion whose
+    # alternative has an rfl::DefaultVal member (segfault); not yet upstream.
+    - reflect-cpp-tagged-union-defaults.patch
+    # The version file is installed as reflectcpp-version.cmake, which
+    # find_package never reads, so find_package(reflectcpp 0.26) failed.
+    - reflect-cpp-config-version-name.patch
+
+build:
+  number: 1
+  script:
+    # CMAKE_ARGS carries conda-forge's prefix, rpath and cross settings.
+    # reflect-cpp defaults to C++20 itself; pin it so the package does not
+    # silently move to 23/26 with a newer compiler. Consumers need C++20 too.
+    # INCLUDE_INSTALL_DIR names the header file set's destination, which the
+    # upstream CMakeLists uses without defining.
+    - cmake -S . -B build -G Ninja ${CMAKE_ARGS}
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_CXX_STANDARD=20
+        -DREFLECTCPP_BUILD_SHARED=ON
+        -DREFLECTCPP_JSON=ON
+        -DREFLECTCPP_USE_BUNDLED_DEPENDENCIES=ON
+        -DREFLECTCPP_USE_VCPKG=OFF
+        -DREFLECTCPP_BUILD_TESTS=OFF
+        -DREFLECTCPP_INSTALL=ON
+        -DINCLUDE_INSTALL_DIR=include
+    - cmake --build build --parallel ${CPU_COUNT}
+    - cmake --install build
+
+requirements:
+  build:
+    - ${{ compiler('cxx') }}
+    # Same compiler pins as mfem-hodgles (mfem/recipe.yaml).
+    - if: linux
+      then: gxx_linux-64 14.*
+    - cmake >=3.23
+    - ninja
+  run_exports:
+    # The headers are the ABI: string-literal template parameters, Result
+    # types and parser specialisations change between minor versions
+    # (upstream's own version file is SameMinorVersion).
+    - ${{ pin_subpackage('reflect-cpp', upper_bound='x.x') }}
+
+tests:
+  - package_contents:
+      include:
+        - rfl.hpp
+        - rfl/json.hpp
+        - rfl/thirdparty/yyjson.h
+        - rfl/thirdparty/ctre.hpp
+      lib:
+        - reflectcpp
+      files:
+        - lib/cmake/reflectcpp/reflectcpp-config.cmake
+        - lib/cmake/reflectcpp/reflectcpp-config-version.cmake
+  # Consumer build, as test-cmake does for mfem-hodgles: a versioned
+  # find_package, a tagged-union read and its schema.
+  - script:
+      - cmake -S test-cmake -B build-consumer -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - cmake --build build-consumer
+      - build-consumer/schema_smoke
+    requirements:
+      run:
+        - ${{ compiler('cxx') }}
+        - cmake >=3.23
+        - ninja
+    files:
+      recipe:
+        - test-cmake/
+
+about:
+  homepage: https://github.com/munich-data-engineering/reflect-cpp
+  license: MIT
+  # The bundled yyjson (MIT), ctre (Apache-2.0 with LLVM exception) and
+  # enchantum (MIT) are installed under include/rfl/thirdparty.
+  license_file: LICENSE
+  summary: C++20 reflection-based serialization with JSON Schema output

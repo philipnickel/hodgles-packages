@@ -1,0 +1,92 @@
+# Caliper for the hodgles conda channel (README.md). Caliper is not on
+# conda-forge; MFEM links it (MFEM_USE_CALIPER) and the solver's profiling
+# ranges are Caliper regions (AGENTS.md "Stock MFEM and profiling"). Shared,
+# so libmfem and the solver use one Caliper runtime. Profiling stays off until
+# a run sets CALI_CONFIG (or uses cali::ConfigManager).
+context:
+  version: 2.15.0
+  build: 0
+
+package:
+  name: caliper
+  version: ${{ version }}
+
+source:
+  url: https://github.com/LLNL/Caliper/archive/refs/tags/v${{ version }}.tar.gz
+  sha256: 6951d084679314f0466bbf2c3df7afde6e75b1539fdfda5aaf6bd72a5459a98f
+  patches:
+    # Upstream af80b77 (after 2.15.0): missing <iterator>/<cstdlib> includes
+    # that conda-forge's newer libc++ rejects on macOS.
+    - caliper-iterator-cstdlib.patch
+
+build:
+  number: ${{ build }}
+  # conda-forge's MPI variant convention: mpi_<impl>_h<hash>_<number>.
+  string: mpi_${{ mpi }}_h${{ hash }}_${{ build }}
+  script:
+    - cmake -S . -B build -G Ninja ${CMAKE_ARGS}
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_INSTALL_LIBDIR=lib
+        -DBUILD_SHARED_LIBS=ON
+        -DMPI_C_COMPILER=$PREFIX/bin/mpicc
+        -DMPI_CXX_COMPILER=$PREFIX/bin/mpicxx
+        -DWITH_MPI=ON
+        -DWITH_TOOLS=ON
+        -DWITH_KOKKOS=OFF
+        -DWITH_FORTRAN=OFF
+        -DWITH_PYTHON_BINDINGS=OFF
+        -DBUILD_TESTING=OFF
+    - cmake --build build --parallel ${CPU_COUNT}
+    - cmake --install build
+
+requirements:
+  build:
+    - ${{ compiler('c') }}
+    - ${{ compiler('cxx') }}
+    # Same compiler pins as mfem-hodgles, reflect-cpp and the solver.
+    - if: linux
+      then: gcc_linux-64 14.*
+    - if: linux
+      then: gxx_linux-64 14.*
+    - cmake >=3.24
+    - ninja
+  host:
+    # The MPI package's run_exports carry the run dependency.
+    - ${{ mpi }}
+  run_exports:
+    # Caliper's C/C++ API is stable within a minor release; downstream
+    # packages also need the same MPI variant.
+    - ${{ pin_subpackage('caliper', upper_bound='x.x', build='mpi_' ~ mpi ~ '_*') }}
+
+tests:
+  - package_contents:
+      include:
+        - caliper/cali.h
+        - caliper/cali-manager.h
+      lib:
+        - caliper
+      bin:
+        - cali-query
+      files:
+        - share/cmake/caliper/caliper-config.cmake
+  # A C++ consumer with an annotated region reports it through runtime-report.
+  - script:
+      - cmake -S test-cmake -B build-consumer -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - cmake --build build-consumer
+      - env CALI_CONFIG=runtime-report build-consumer/region_smoke > report.txt 2>&1
+      - cat report.txt
+      - grep -q 'caliper_smoke' report.txt
+    requirements:
+      run:
+        - ${{ compiler('cxx') }}
+        - cmake >=3.24
+        - ninja
+    files:
+      recipe:
+        - test-cmake/
+
+about:
+  homepage: https://github.com/LLNL/Caliper
+  license: BSD-3-Clause
+  license_file: LICENSE
+  summary: Caliper performance analysis toolbox (MPI build)

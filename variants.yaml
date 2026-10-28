@@ -1,0 +1,19 @@
+# Build variants shared by the MPI recipes (caliper, gslib, mfem). Each of
+# those recipe directories links its variants.yaml here, so a plain
+# `rattler-build build --recipe <name>` picks them up.
+#
+# MPI implementation. Enabling LUMI (Cray MPICH, docs/cluster-io-plan.md) is
+# the one line `- mpich`: every MPI recipe then builds a second variant
+# against conda-forge's mpich, whose run_exports select it at install time.
+mpi:
+  - openmpi
+
+# x86-64 microarchitecture level of mfem-hodgles (conda-forge's microarch-level
+# helper, knowledge base "Microarchitecture-optimized builds"): a generic
+# build and an x86-64-v3 (AVX2, FMA) build on linux-64; the solver prefers
+# the v3 build (higher build number) where __archspec allows it. Only the
+# mfem recipe uses this key; osx-arm64 builds once.
+microarch_level:
+  - 1
+  - if: linux and x86_64
+    then: 3

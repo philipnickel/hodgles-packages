@@ -1,0 +1,31 @@
+--- a/include/rfl/parsing/Parser_default.hpp	2026-10-27 17:57:20
++++ b/include/rfl/parsing/Parser_default.hpp	2026-10-27 17:57:20
+@@ -654,12 +654,27 @@
+ 
+       } else {
+         using NamedTupleType = internal::processed_t<U, ProcessorsType>;
+-        if constexpr (internal::has_default_val_v<U>) {
++        if constexpr (internal::has_default_val_v<U> &&
++                      is_tagged_union_wrapper_v<U>) {
++          // dgns patch: the wrapper's fields are a const pointer, null in a
++          // default-constructed wrapper; point them at a default alternative.
++          const auto alternative = typename U::Type{};
+           auto t = U{};
++          if constexpr (std::is_pointer_v<typename U::FlattenedType>) {
++            t.fields = rfl::Flatten<typename U::FlattenedType>(&alternative);
++          } else {
++            t.fields = rfl::Flatten<typename U::FlattenedType>(alternative);
++          }
+           auto view = ProcessorsType::template process<U>(to_view(t));
+           (*_definitions)[name] =
+               Parser<R, W, NamedTupleType, ProcessorsType>::to_schema(
+                   _definitions, &view);
++        } else if constexpr (internal::has_default_val_v<U>) {
++          auto t = U{};
++          auto view = ProcessorsType::template process<U>(to_view(t));
++          (*_definitions)[name] =
++              Parser<R, W, NamedTupleType, ProcessorsType>::to_schema(
++                  _definitions, &view);
+         } else {
+           (*_definitions)[name] =
+               Parser<R, W, NamedTupleType, ProcessorsType>::to_schema(

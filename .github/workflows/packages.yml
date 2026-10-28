@@ -1,0 +1,137 @@
+# Build the conda recipes in this repository (README.md) for linux-64
+# and osx-arm64 and publish them to the prefix.dev channel philipnickel-hodgles.
+# Recipes build in dependency order in one job per platform, each reading the
+# packages built before it from the job's output directory. A package whose
+# exact build (same hash) is already on the channel is skipped, so a change
+# to one recipe rebuilds only that recipe and the ones whose hash it changes.
+# Uploads happen only on the default branch or a manual dispatch.
+#
+# TODO: hodgles-solver (cpp/, published on demand before cluster campaigns,
+# docs/cluster-io-plan.md "Packaging") is not built here yet.
+name: Conda packages
+
+on:
+  push:
+    paths:
+      - "**"
+      - .github/workflows/packages.yml
+  pull_request:
+    paths:
+      - "**"
+      - .github/workflows/packages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # prefix.dev channel, as pyproject.toml reads it
+  # (https://prefix.dev/philipnickel/philipnickel-hodgles).
+  PREFIX_CHANNEL: philipnickel/philipnickel-hodgles
+  PREFIX_CHANNEL_URL: https://prefix.dev/philipnickel/philipnickel-hodgles
+  RATTLER_BUILD_VERSION: v0.75.0
+
+jobs:
+  build:
+    name: Build ${{ matrix.target-platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target-platform: linux-64
+          - runner: macos-14
+            target-platform: osx-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install rattler-build
+        uses: prefix-dev/rattler-build-action@1ca5f45832f419a46d1326ccc5861d7e14d67c44 # v0.2.39
+        with:
+          rattler-build-version: ${{ env.RATTLER_BUILD_VERSION }}
+          setup-only: true
+
+      # Dependency order: mfem needs caliper and gslib; reflect-cpp is
+      # independent (the solver needs it). On linux-64, mfem builds twice
+      # (microarch_level 1 and 3, variants.yaml).
+      - name: Build and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$PWD/output"
+          mkdir -p "$out"
+          for recipe in caliper gslib reflect-cpp mfem; do
+            echo "::group::${recipe}"
+            rattler-build build \
+              --recipe "${recipe}" \
+              --target-platform "${{ matrix.target-platform }}" \
+              --channel "$out" \
+              --channel "$PREFIX_CHANNEL_URL" \
+              --channel conda-forge \
+              --skip-existing all \
+              --output-dir "$out" \
+              --package-format conda \
+              --error-prefix-in-binary
+            echo "::endgroup::"
+          done
+          find "$out" -name '*.conda' -print | sort
+
+      - name: Upload packages as an artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: packages-${{ matrix.target-platform }}
+          path: output/${{ matrix.target-platform }}/*.conda
+          # Nothing new when every package was already on the channel.
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish to prefix.dev
+    needs: build
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      # prefix.dev trusted publishing (OIDC): no API key is stored in the
+      # repository. The channel must list this repository and workflow file
+      # as a trusted publisher (README.md "Publishing").
+      id-token: write
+    steps:
+      - name: Install rattler-build
+        uses: prefix-dev/rattler-build-action@1ca5f45832f419a46d1326ccc5861d7e14d67c44 # v0.2.39
+        with:
+          rattler-build-version: ${{ env.RATTLER_BUILD_VERSION }}
+          setup-only: true
+
+      - name: Download packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: packages-*
+          path: packages
+          merge-multiple: true
+
+      - name: Upload with attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t packages < <(find packages -type f -name '*.conda' -print 2>/dev/null | sort)
+          if [ "${#packages[@]}" -eq 0 ]; then
+            echo "No new packages to publish."
+            exit 0
+          fi
+          printf '%s\n' "${packages[@]}"
+          for package in "${packages[@]}"; do
+            rattler-build upload prefix \
+              --channel "$PREFIX_CHANNEL" \
+              --generate-attestation \
+              --skip-existing \
+              "$package"
+          done

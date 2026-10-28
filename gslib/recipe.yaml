@@ -1,0 +1,63 @@
+# GSLIB for the hodgles conda channel (README.md): the Nek5000
+# gather-scatter and findpts library that MFEM 4.10 uses for
+# FindPointsGSLIB (MFEM_USE_GSLIB), the version MFEM fetches itself and
+# Spack's mfem+gslib uses. Not on conda-forge.
+#
+# Shared (conda-forge prefers it) instead of the static -fPIC archive the
+# earlier MFEM recipe linked into libmfem: MFEM's FindGSLIB looks for library `gs`
+# either way, and MFEMConfig.cmake then references a library that ships in
+# its own package rather than a build-tree archive.
+context:
+  version: 1.0.9
+  build: 0
+
+package:
+  name: gslib
+  version: ${{ version }}
+
+source:
+  url: https://github.com/Nek5000/gslib/archive/refs/tags/v${{ version }}.tar.gz
+  sha256: 572c78b1ca4ddda75ec85c6299ee0597459f4dbf5170b9faa6de4c435dcdc80b
+
+build:
+  number: ${{ build }}
+  string: mpi_${{ mpi }}_h${{ hash }}_${{ build }}
+  script:
+    # Plain Makefile. MPI=1 defines GSLIB_USE_MPI (written into
+    # include/gslib/config.h); SHARED=1 adds -fPIC and, on macOS, an
+    # @rpath install name. CFLAGS/LDFLAGS carry conda-forge's flags. On
+    # Linux the Makefile sets no SONAME, so consumers linking it by path
+    # would record that path in DT_NEEDED; give it one.
+    - if [[ "${target_platform}" == linux-* ]]; then export LDFLAGS="${LDFLAGS} -Wl,-soname,libgs.so"; fi
+    - make CC=$PREFIX/bin/mpicc MPI=1 STATIC=0 SHARED=1 CFLAGS="${CFLAGS} -O2" LDFLAGS="${LDFLAGS}" lib
+    - make CC=$PREFIX/bin/mpicc MPI=1 STATIC=0 SHARED=1 CFLAGS="${CFLAGS} -O2" LDFLAGS="${LDFLAGS}" DESTDIR=$PREFIX install
+
+requirements:
+  build:
+    - ${{ compiler('c') }}
+    # Same compiler pin as mfem-hodgles, reflect-cpp and the solver.
+    - if: linux
+      then: gcc_linux-64 14.*
+    - make
+  host:
+    - ${{ mpi }}
+  run_exports:
+    # No ABI promise between releases.
+    - ${{ pin_subpackage('gslib', upper_bound='x.x.x', build='mpi_' ~ mpi ~ '_*') }}
+
+tests:
+  - package_contents:
+      include:
+        - gslib.h
+        - gslib/config.h
+        - gslib/findpts.h
+      lib:
+        - gs
+  - script:
+      - grep -q 'GSLIB_USE_MPI' $PREFIX/include/gslib/config.h
+
+about:
+  homepage: https://github.com/Nek5000/gslib
+  license: BSD-3-Clause
+  license_file: LICENSE
+  summary: Nek5000 gather-scatter and findpts library (MPI build)

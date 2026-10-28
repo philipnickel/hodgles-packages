@@ -1,0 +1,113 @@
+# mfem-hodgles for the hodgles conda channel (README.md): stock upstream
+# MFEM 4.10.0, no source patches, with the solver's feature set (build.sh).
+# MPI is a variant (../variants.yaml); the MPI run dependency comes from the
+# MPI package's run_exports. On linux-64 a generic and an x86-64-v3 build
+# (conda-forge's microarch-level helper); the solver picks by __archspec.
+context:
+  version: 4.10.0.post5
+  mfem_version: 4.10.0
+  build: 0
+  # The preferred (highest) microarchitecture level gets the highest build
+  # number, so the solver installs it wherever __archspec allows.
+  build_number: ${{ build + 100 * (microarch_level | int - 1) }}
+
+package:
+  name: mfem-hodgles
+  version: ${{ version }}
+
+source:
+  # Upstream release v4.10 (commit d964264cdb9a13e94a201b6c236c7721e0c8765f).
+  url: https://github.com/mfem/mfem/archive/refs/tags/v4.10.tar.gz
+  sha256: d5aabe991b8b5569aa26e2b5d4b59ac617ee10ebac3d45fd6ff9c74b2c1a47dd
+
+build:
+  number: ${{ build_number }}
+  string: mpi_${{ mpi }}_h${{ hash }}_${{ build_number }}
+  script: build.sh
+
+requirements:
+  build:
+    - ${{ compiler('c') }}
+    - ${{ compiler('cxx') }}
+    # Same compiler pins as caliper, gslib, reflect-cpp and the solver.
+    - if: linux
+      then: gcc_linux-64 14.*
+    - if: linux
+      then: gxx_linux-64 14.*
+    - if: linux and x86_64
+      then: x86_64-microarch-level ==${{ microarch_level }}
+    - cmake >=3.24
+    - ninja
+  host:
+    - ${{ mpi }}
+    # hypre 3.x builds carry no mpi_ string; the host MPI selects the build.
+    - hypre 3.2.*
+    - metis 5.*
+    - zlib
+    - libblas
+    - liblapack
+    - hdf5 * mpi_${{ mpi }}_*
+    - caliper 2.15.* mpi_${{ mpi }}_*
+    - gslib 1.0.9.* mpi_${{ mpi }}_*
+  run:
+    # mfem.hpp includes the hypre, METIS, zlib, HDF5 and Caliper headers, so
+    # consumers need the development packages; versions come from run_exports.
+    - hypre
+    - metis
+    - zlib
+    - hdf5 * mpi_${{ mpi }}_*
+  run_exports:
+    - ${{ pin_subpackage('mfem-hodgles', exact=True) }}
+
+tests:
+  - package_contents:
+      include:
+        - mfem.hpp
+        - mfem/config/_config.hpp
+      lib:
+        - mfem
+      files:
+        - lib/cmake/mfem/MFEMConfig.cmake
+        - share/mfem/config.mk
+  - script:
+      - grep -q '^#define MFEM_USE_MPI' $PREFIX/include/mfem/config/_config.hpp
+      - grep -q '^#define MFEM_USE_GSLIB' $PREFIX/include/mfem/config/_config.hpp
+      - grep -q '^#define MFEM_USE_CALIPER' $PREFIX/include/mfem/config/_config.hpp
+      - grep -q '^#define MFEM_USE_HDF5' $PREFIX/include/mfem/config/_config.hpp
+      - "! grep -q '^#define MFEM_THREAD_SAFE' $PREFIX/include/mfem/config/_config.hpp"
+      - "! grep -q '^#define MFEM_USE_MPFR' $PREFIX/include/mfem/config/_config.hpp"
+      - "! grep -q '^#define MFEM_USE_CEED' $PREFIX/include/mfem/config/_config.hpp"
+      # MFEM's parallel VTKHDF path needs an HDF5 built with MPI-IO.
+      - grep -q '^#define H5_HAVE_PARALLEL 1' $PREFIX/include/H5pubconf.h
+      - cmake -S test-cmake -B build-consumer -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - cmake --build build-consumer
+      - env OMPI_MCA_rmaps_base_oversubscribe=1 mpiexec -n 2 build-consumer/parmesh_smoke
+      # Caliper reports the consumer's MFEM_PERF_SCOPE region when enabled.
+      - env OMPI_MCA_rmaps_base_oversubscribe=1 CALI_CONFIG=runtime-report mpiexec -n 2 build-consumer/parmesh_smoke > caliper-report.txt 2>&1
+      - cat caliper-report.txt
+      - grep -q 'parmesh_smoke' caliper-report.txt
+      # Two ranks write one shared VTKHDF file (ParMesh + GridFunction, two cycles).
+      - env OMPI_MCA_rmaps_base_oversubscribe=1 mpiexec -n 2 build-consumer/hdf5_smoke
+      - test -s hdf5-out/hdf5_smoke.vtkhdf
+      - ls -l hdf5-out
+    requirements:
+      run:
+        - ${{ compiler('cxx') }}
+        - cmake >=3.24
+        - ninja
+    files:
+      recipe:
+        - test-cmake/
+
+about:
+  homepage: https://mfem.org
+  repository: https://github.com/mfem/mfem
+  license: BSD-3-Clause
+  license_file: LICENSE
+  summary: Stock MFEM 4.10 C++ library (MPI, HDF5, GSLIB, Caliper) for hodgles
+  description: |
+    Stock upstream MFEM 4.10.0 (no patches) built as a shared library with
+    MPI, hypre, METIS, zlib, LAPACK, GSLIB, Caliper and parallel HDF5
+    (ParaViewHDFDataCollection). MPFR, thread safety, libCEED, OpenMP and GPU
+    backends are off. One build per MPI variant; on linux-64 a generic and an
+    x86-64-v3 build.
