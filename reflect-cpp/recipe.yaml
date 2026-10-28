@@ -26,7 +26,7 @@ source:
     - reflect-cpp-config-version-name.patch
 
 build:
-  number: 1
+  number: 2
   script:
     # CMAKE_ARGS carries conda-forge's prefix, rpath and cross settings.
     # reflect-cpp defaults to C++20 itself; pin it so the package does not
@@ -49,6 +49,8 @@ build:
 requirements:
   build:
     - ${{ compiler('cxx') }}
+    # The glibc floor (../variants.yaml c_stdlib_version).
+    - ${{ stdlib('c') }}
     # Same compiler pins as mfem-hodgles (mfem/recipe.yaml).
     - if: linux
       then: gxx_linux-64 14.*

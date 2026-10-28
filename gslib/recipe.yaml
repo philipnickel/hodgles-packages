@@ -9,7 +9,7 @@
 # its own package rather than a build-tree archive.
 context:
   version: 1.0.9
-  build: 0
+  build: 1
 
 package:
   name: gslib
@@ -35,6 +35,8 @@ build:
 requirements:
   build:
     - ${{ compiler('c') }}
+    # The glibc floor (../variants.yaml c_stdlib_version).
+    - ${{ stdlib('c') }}
     # Same compiler pin as mfem-hodgles, reflect-cpp and the solver.
     - if: linux
       then: gcc_linux-64 14.*

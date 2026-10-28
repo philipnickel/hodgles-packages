@@ -6,7 +6,7 @@
 context:
   version: 4.10.0.post5
   mfem_version: 4.10.0
-  build: 0
+  build: 1
   # The preferred (highest) microarchitecture level gets the highest build
   # number, so the solver installs it wherever __archspec allows.
   build_number: ${{ build + 100 * (microarch_level | int - 1) }}
@@ -29,6 +29,8 @@ requirements:
   build:
     - ${{ compiler('c') }}
     - ${{ compiler('cxx') }}
+    # The glibc floor (../variants.yaml c_stdlib_version).
+    - ${{ stdlib('c') }}
     # Same compiler pins as caliper, gslib, reflect-cpp and the solver.
     - if: linux
       then: gcc_linux-64 14.*

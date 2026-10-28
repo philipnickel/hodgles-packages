@@ -1,6 +1,22 @@
-# Build variants shared by the MPI recipes (caliper, gslib, mfem). Each of
-# those recipe directories links its variants.yaml here, so a plain
+# Build variants shared by the recipes (caliper, gslib, mfem, reflect-cpp).
+# Each recipe directory links its variants.yaml here, so a plain
 # `rattler-build build --recipe <name>` picks them up.
+
+# The C standard library the packages are built against: conda-forge's
+# sysroot with glibc 2.28 on linux (runs on DTU's 2.34 and LUMI's SLES 15
+# 2.31; the build machine's newer glibc made libmfem need 2.35 and
+# libcaliper 2.38, 2026-10-28), and the macOS deployment target. stdlib('c')
+# also adds the matching __glibc / __osx run requirement.
+c_stdlib:
+  - if: linux
+    then: sysroot
+  - if: osx
+    then: macosx_deployment_target
+c_stdlib_version:
+  - if: linux
+    then: "2.28"
+  - if: osx
+    then: "11.0"
 #
 # MPI implementation. Enabling LUMI (Cray MPICH, docs/cluster-io-plan.md) is
 # the one line `- mpich`: every MPI recipe then builds a second variant
