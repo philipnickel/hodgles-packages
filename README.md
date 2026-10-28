@@ -4,7 +4,7 @@ Recipes for the packages hodgles (high-order discontinuous Galerkin large
 eddy simulations) needs that conda-forge does not provide. Everything else (hypre, METIS, zlib,
 BLAS/LAPACK, HDF5, Open MPI) comes from conda-forge. The recipes are
 rattler-build v1 recipes; `.github/workflows/packages.yml` builds them and
-publishes them to the prefix.dev channel `philipnickel-hodgles`.
+publishes them to the prefix.dev channel `hodgles`.
 
 | Recipe | Package | What |
 |---|---|---|
@@ -99,7 +99,7 @@ rattler-build build --recipe mfem -c conda-forge -c "$PWD/out" --output-dir "$PW
 ```
 
 `out/` is ignored by git. Each build runs its recipe tests. Add
-`--skip-existing all -c https://prefix.dev/philipnickel/philipnickel-hodgles`
+`--skip-existing all -c https://prefix.dev/philipnickel/hodgles`
 to skip builds whose hash is already published. linux-64
 builds need a Linux host (CI); `--target-platform linux-64` from macOS
 cross-compiles but cannot run the tests.
@@ -130,17 +130,17 @@ environment.
 By hand (a local build, after review):
 
 ```bash
-PREFIX_API_KEY=... rattler-build upload prefix --channel philipnickel/philipnickel-hodgles out/osx-arm64/mfem-hodgles-4.10.0.post5-*.conda
+PREFIX_API_KEY=... rattler-build upload prefix --channel philipnickel/hodgles out/osx-arm64/mfem-hodgles-4.10.0.post5-*.conda
 ```
 
 ## Channels
 
-- `philipnickel-hodgles`: these dependencies and the solver builds used for
+- `hodgles`: these dependencies and the solver builds used for
   report results (releases).
-- `philipnickel-hodgles-dev` (later): solver development builds
+- `hodgles-dev` (later): solver development builds
   (`hodgles-solver`, versioned by date and commit, published on demand before
   cluster campaigns), so development builds never mix with the release
   channel.
 
 After a publish, the hodgles workspace reads `mfem-hodgles` and reflect-cpp
-from `philipnickel-hodgles`.
+from `hodgles`.

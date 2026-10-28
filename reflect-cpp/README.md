@@ -36,7 +36,7 @@ it into the solver's run dependencies.
 
 Published packages are immutable. `.github/workflows/packages.yml` builds
 this recipe for linux-64 and osx-arm64 (after caliper and gslib, before
-mfem) and uploads it to `https://prefix.dev/philipnickel/philipnickel-hodgles`
+mfem) and uploads it to `https://prefix.dev/philipnickel/hodgles`
 on the default branch or a manual dispatch; `README.md` describes
 the workflow, local builds and the prefix.dev setup. Once published, drop
 the `file://` channel from `pyproject.toml`, move `reflect-cpp` from

@@ -1,5 +1,5 @@
 # Build the conda recipes in this repository (README.md) for linux-64
-# and osx-arm64 and publish them to the prefix.dev channel philipnickel-hodgles.
+# and osx-arm64 and publish them to the prefix.dev channel hodgles.
 # Recipes build in dependency order in one job per platform, each reading the
 # packages built before it from the job's output directory. A package whose
 # exact build (same hash) is already on the channel is skipped, so a change
@@ -30,9 +30,9 @@ concurrency:
 
 env:
   # prefix.dev channel, as pyproject.toml reads it
-  # (https://prefix.dev/philipnickel/philipnickel-hodgles).
-  PREFIX_CHANNEL: philipnickel/philipnickel-hodgles
-  PREFIX_CHANNEL_URL: https://prefix.dev/philipnickel/philipnickel-hodgles
+  # (https://prefix.dev/philipnickel/hodgles).
+  PREFIX_CHANNEL: philipnickel/hodgles
+  PREFIX_CHANNEL_URL: https://prefix.dev/philipnickel/hodgles
   RATTLER_BUILD_VERSION: v0.75.0
 
 jobs:
