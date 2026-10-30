@@ -57,16 +57,20 @@ jobs:
           rattler-build-version: ${{ env.RATTLER_BUILD_VERSION }}
           setup-only: true
 
-      # Dependency order: mfem needs caliper and gslib; reflect-cpp is
-      # independent (the solver needs it). On linux-64, mfem builds twice
-      # (microarch_level 1 and 3, variants.yaml).
+      # Dependency order: mfem needs caliper and gslib, and its CUDA build
+      # hypre-cuda; reflect-cpp is independent (the solver needs it). On
+      # linux-64, mfem builds three times (microarch_level 1 and 3, and CUDA
+      # at level 3, variants.yaml); hypre-cuda skips osx-arm64. The runners
+      # have no GPU: CONDA_OVERRIDE_CUDA lets the CUDA packages install.
       - name: Build and test
         shell: bash
+        env:
+          CONDA_OVERRIDE_CUDA: "12.9"
         run: |
           set -euo pipefail
           out="$PWD/output"
           mkdir -p "$out"
-          for recipe in caliper gslib reflect-cpp mfem; do
+          for recipe in caliper gslib reflect-cpp hypre-cuda mfem; do
             echo "::group::${recipe}"
             rattler-build build \
               --recipe "${recipe}" \

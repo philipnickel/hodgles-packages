@@ -3,7 +3,9 @@
 # against conda-forge's hypre, METIS, zlib, BLAS/LAPACK and parallel HDF5 and
 # this directory's sibling packages caliper and gslib. Feature set:
 #   mfem@4.10.0 +mpi +metis +zlib +lapack +gslib +caliper +hdf5 ~mpfr
-#               ~threadsafe ~libceed ~openmp cxxstd=17 (hypre, CPU only)
+#               ~threadsafe ~libceed ~openmp cxxstd=17
+# and with gpu=cuda (recipe.yaml) +cuda cuda_arch=<cuda_arch> against
+# hypre-cuda; otherwise CPU only.
 set -euxo pipefail
 
 # ---- Compiler flags --------------------------------------------------------
@@ -20,6 +22,21 @@ set -euxo pipefail
 export CXXFLAGS="${CXXFLAGS:-} -fno-visibility-inlines-hidden -O3"
 if [[ "${target_platform}" == osx-arm64 ]]; then
   export CXXFLAGS="${CXXFLAGS} -mcpu=apple-m1"
+fi
+
+# ---- CUDA ------------------------------------------------------------------
+# MFEM compiles every source as CUDA (nvcc, host compiler $CXX) and emits
+# SASS for each architecture in cuda_arch (-gencode, no PTX; recipe.yaml
+# passes it as CUDA_ARCHITECTURES). FindHYPRE checks that hypre-cuda defines
+# HYPRE_USING_CUDA.
+cuda_args=(-DMFEM_USE_CUDA=OFF)
+if [[ "${gpu:-none}" == cuda ]]; then
+  cuda_args=(
+    -DMFEM_USE_CUDA=ON
+    -DCMAKE_CUDA_COMPILER="$BUILD_PREFIX/bin/nvcc"
+    -DCMAKE_CUDA_HOST_COMPILER="$CXX"
+    -DCMAKE_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}"
+  )
 fi
 
 # ---- MFEM ------------------------------------------------------------------
@@ -51,7 +68,7 @@ cmake -S . -B build -G Ninja \
   -DMFEM_THREAD_SAFE=OFF \
   -DMFEM_USE_OPENMP=OFF \
   -DMFEM_USE_CEED=OFF \
-  -DMFEM_USE_CUDA=OFF \
+  "${cuda_args[@]}" \
   -DMFEM_USE_EXCEPTIONS=OFF \
   -DMFEM_ENABLE_TESTING=OFF \
   -DMFEM_ENABLE_EXAMPLES=OFF \

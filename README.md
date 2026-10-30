@@ -11,7 +11,8 @@ publishes them to the prefix.dev channel `hodgles`.
 | `caliper/` | `caliper` 2.15.0 | LLNL Caliper, shared, MPI; upstream tarball plus upstream fix af80b77 (`caliper-iterator-cstdlib.patch`) |
 | `gslib/` | `gslib` 1.0.9 | Nek5000 GSLIB, shared, MPI (MFEM's FindPointsGSLIB) |
 | `reflect-cpp/` | `reflect-cpp` 0.26.2 | the option contract's serialization; its own README.md |
-| `mfem/` | `mfem-hodgles` 4.10.0.post5 | stock upstream MFEM 4.10.0 (no patches): MPI, hypre, METIS, zlib, LAPACK, GSLIB, Caliper, parallel HDF5 |
+| `hypre-cuda/` | `hypre-cuda` 3.2.0 | hypre 3.2.0 with CUDA (device memory, cuSPARSE/cuBLAS/cuRAND/cuSOLVER), linux-64 only; conda-forge's hypre is CPU-only |
+| `mfem/` | `mfem-hodgles` 4.10.0.post5 | stock upstream MFEM 4.10.0 (no patches): MPI, hypre, METIS, zlib, LAPACK, GSLIB, Caliper, parallel HDF5; on linux-64 also a CUDA build against hypre-cuda |
 
 Compared with the earlier `mfem-dgns` 4.10.0.post4 (built from a PyMFEM fork,
 which vendored Caliper and a static GSLIB and hard-pinned Open MPI 5.0.10),
@@ -37,12 +38,14 @@ GridFunction (two cycles; `hdf5-out/hdf5_smoke.vtkhdf` must be non-empty).
 ## Dependency order
 
 ```
-caliper ─┐
-gslib  ──┴─> mfem-hodgles ─┐
-reflect-cpp ────────────┴─> hodgles-solver (built from the private hodgles repository)
+caliper ───┐
+gslib  ────┤
+hypre-cuda ┴─> mfem-hodgles ─┐
+reflect-cpp ──────────────┴─> hodgles-solver (built from the private hodgles repository)
 ```
 
-Build caliper and gslib before mfem; reflect-cpp is independent.
+Build caliper, gslib and hypre-cuda before mfem (hypre-cuda only for its
+CUDA build); reflect-cpp is independent.
 
 ## Variants
 
@@ -66,6 +69,28 @@ finds it without `--variant-config`):
   allows; the v3 build has build number 200 (level 1: 0), so the solver
   prefers it wherever it can run. osx-arm64 builds once, with
   `-mcpu=apple-m1`.
+- `gpu` (mfem only): `none`, and on linux-64 `cuda`. The CUDA build
+  (`-DMFEM_USE_CUDA=ON`, every MFEM source through nvcc) links hypre-cuda
+  and conda-forge's CUDA libraries, builds at microarch level 3 only, and
+  has the build string `cuda<ver>_mpi_<mpi>_h<hash>_<n>`. Its build number
+  is `build - 1`, below every CPU build, and it requires `__cuda` (an NVIDIA
+  driver), so it is installed only on request, e.g. in pixi
+  `mfem-hodgles = { version = "==4.10.0.post5", build = "cuda*" }`. Its
+  consumers also need `cuda-nvcc` of the same `cuda_version`.
+- `cuda_version` (hypre-cuda, mfem cuda): the conda-forge `cuda-version`,
+  12.9. CUDA 12.x runs on drivers >= 525; 13.x needs >= 580 and drops
+  Volta.
+- `cuda_arch` (hypre-cuda, mfem cuda): `CMAKE_CUDA_ARCHITECTURES`, `80;90`
+  (A100/A30, H100/H200). MFEM emits SASS only (no PTX), so a GPU outside the
+  list cannot run the build; add its compute capability
+  (`nvidia-smi --query-gpu=compute_cap --format=csv`) and rebuild. Each
+  entry adds a full device compile.
+
+The CUDA builds compile and link on the CPU-only CI runners
+(`CONDA_OVERRIDE_CUDA` stands in for the driver), and the recipe tests
+check the config defines and build the MFEM consumer. They cannot run it:
+`Hypre::Init` needs a GPU. Run `mfem/test-cmake` on a GPU host before
+relying on a CUDA build.
 
 ### Enabling LUMI later (MPICH)
 
@@ -98,6 +123,16 @@ rattler-build build --recipe reflect-cpp -c conda-forge -c "$PWD/out" --output-d
 rattler-build build --recipe mfem -c conda-forge -c "$PWD/out" --output-dir "$PWD/out"
 ```
 
+The CUDA builds (linux-64; no GPU needed to build):
+
+```bash
+CONDA_OVERRIDE_CUDA=12.9 rattler-build build --recipe hypre-cuda -c conda-forge -c "$PWD/out" --output-dir "$PWD/out"
+```
+
+```bash
+CONDA_OVERRIDE_CUDA=12.9 rattler-build build --recipe mfem --variant gpu=cuda -c conda-forge -c "$PWD/out" --output-dir "$PWD/out"
+```
+
 `out/` is ignored by git. Each build runs its recipe tests. Add
 `--skip-existing all -c https://prefix.dev/philipnickel/hodgles`
 to skip builds whose hash is already published. linux-64
@@ -112,8 +147,8 @@ are immutable.
 
 `.github/workflows/packages.yml` runs on changes to the recipes (push,
 pull request) and on manual dispatch. One job per platform (ubuntu-24.04
-for linux-64, macos-14 for osx-arm64) builds caliper, gslib, reflect-cpp
-and mfem in that order with `--skip-existing all` against the channel, runs
+for linux-64, macos-14 for osx-arm64) builds caliper, gslib, reflect-cpp,
+hypre-cuda (linux-64) and mfem in that order with `--skip-existing all` against the channel, runs
 the recipe tests, and keeps the new packages as an artifact. A publish job
 uploads them with `rattler-build upload prefix --generate-attestation` only
 for a push to the default branch or a manual dispatch; pull requests build

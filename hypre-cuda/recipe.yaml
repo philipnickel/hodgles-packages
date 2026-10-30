@@ -1,0 +1,124 @@
+# hypre-cuda for the hodgles conda channel (README.md): stock hypre 3.2.0
+# built with CUDA, for the CUDA variant of mfem-hodgles. conda-forge's hypre
+# is CPU-only. Same version, integer sizes and BLAS/LAPACK as conda-forge's
+# hypre 3.2 (which the CPU mfem-hodgles uses), plus the CUDA backend:
+# device memory (no unified memory, MFEM passes device pointers through
+# HypreRead/HypreWrite), cuSPARSE, cuBLAS, cuRAND and cuSOLVER, and the
+# architectures of ../variants.yaml cuda_arch. Not GPU-aware MPI: the
+# halos go through the host, so any MPI works (docs/feasibility/gpu.md in
+# hodgles, Phase 2).
+context:
+  version: 3.2.0
+  build: 0
+
+package:
+  name: hypre-cuda
+  version: ${{ version }}
+
+source:
+  url: https://github.com/hypre-space/hypre/archive/v${{ version }}.tar.gz
+  sha256: 5273205a310fb6aa3ae506ce216760fb67b30e02024874f3cdb8b811e4801de7
+
+build:
+  number: ${{ build }}
+  # cuda<major><minor>_mpi_<impl>_h<hash>_<number>.
+  string: cuda${{ cuda_version | replace('.', '') }}_mpi_${{ mpi }}_h${{ hash }}_${{ build }}
+  skip:
+    - not (linux and x86_64)
+  script:
+    - cmake -S src -B build -G Ninja ${CMAKE_ARGS}
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_INSTALL_LIBDIR=lib
+        -DCMAKE_C_COMPILER=$PREFIX/bin/mpicc
+        -DCMAKE_CXX_COMPILER=$PREFIX/bin/mpicxx
+        -DCMAKE_CUDA_HOST_COMPILER=$CXX
+        -DCMAKE_CUDA_ARCHITECTURES="${{ cuda_arch }}"
+        -DBUILD_SHARED_LIBS=ON
+        -DHYPRE_ENABLE_MPI=ON
+        -DHYPRE_ENABLE_HYPRE_BLAS=OFF
+        -DHYPRE_ENABLE_HYPRE_LAPACK=OFF
+        -DTPL_BLAS_LIBRARIES=$PREFIX/lib/libblas${SHLIB_EXT}
+        -DTPL_LAPACK_LIBRARIES=$PREFIX/lib/liblapack${SHLIB_EXT}
+        -DHYPRE_ENABLE_FEI=OFF
+        -DHYPRE_ENABLE_CUDA=ON
+        -DHYPRE_ENABLE_UNIFIED_MEMORY=OFF
+        -DHYPRE_ENABLE_GPU_AWARE_MPI=OFF
+        -DHYPRE_ENABLE_CUSPARSE=ON
+        -DHYPRE_ENABLE_CUBLAS=ON
+        -DHYPRE_ENABLE_CURAND=ON
+        -DHYPRE_ENABLE_CUSOLVER=ON
+        -DHYPRE_ENABLE_UMPIRE=OFF
+        -DHYPRE_BUILD_EXAMPLES=OFF
+        -DHYPRE_BUILD_TESTS=OFF
+    - cmake --build build --parallel ${CPU_COUNT}
+    - cmake --install build
+
+requirements:
+  build:
+    - ${{ compiler('c') }}
+    - ${{ compiler('cxx') }}
+    # The glibc floor (../variants.yaml c_stdlib_version).
+    - ${{ stdlib('c') }}
+    # Same compiler pins as mfem-hodgles; CUDA 12.8 and newer accept GCC 14.
+    - gcc_linux-64 14.*
+    - gxx_linux-64 14.*
+    - cuda-nvcc ${{ cuda_version }}.*
+    - cmake >=3.24
+    - ninja
+  host:
+    - ${{ mpi }}
+    - libblas
+    - liblapack
+    - cuda-version ${{ cuda_version }}.*
+    - cuda-cudart-dev
+    # Thrust and CUB.
+    - cuda-cccl
+    # _hypre_utilities.hpp includes cuda_profiler_api.h.
+    - cuda-profiler-api
+    - libcusparse-dev
+    - libcublas-dev
+    - libcurand-dev
+    - libcusolver-dev
+  run:
+    # HYPRE_config.h and the CUDA headers hypre's headers include; the
+    # runtime libraries come from the -dev packages' run_exports.
+    - cuda-version ${{ cuda_version }}.*
+    - cuda-cudart-dev
+    - cuda-profiler-api
+    - libcusparse-dev
+    - libcublas-dev
+    - libcurand-dev
+    - libcusolver-dev
+    # Needs an NVIDIA driver (CONDA_OVERRIDE_CUDA to install elsewhere).
+    - __cuda
+  run_constraints:
+    # Same files as conda-forge's hypre; never install both.
+    - hypre <0a0
+  run_exports:
+    - ${{ pin_subpackage('hypre-cuda', upper_bound='x.x') }}
+
+tests:
+  - package_contents:
+      include:
+        - HYPRE.h
+        - HYPRE_config.h
+      lib:
+        - HYPRE
+  - script:
+      - grep -q '^#define HYPRE_USING_CUDA' $PREFIX/include/HYPRE_config.h
+      - grep -q '^#define HYPRE_USING_DEVICE_MEMORY' $PREFIX/include/HYPRE_config.h
+      - grep -q '^#define HYPRE_USING_CUSPARSE' $PREFIX/include/HYPRE_config.h
+      - "! grep -q '^#define HYPRE_USING_UNIFIED_MEMORY' $PREFIX/include/HYPRE_config.h"
+      - "! grep -q '^#define HYPRE_USING_GPU_AWARE_MPI' $PREFIX/include/HYPRE_config.h"
+      - "! grep -q '^#define HYPRE_MIXEDINT' $PREFIX/include/HYPRE_config.h"
+      - "! grep -q '^#define HYPRE_BIGINT' $PREFIX/include/HYPRE_config.h"
+
+about:
+  homepage: https://www.llnl.gov/casc/hypre/
+  repository: https://github.com/hypre-space/hypre
+  documentation: https://hypre.readthedocs.io
+  license: Apache-2.0 OR MIT
+  license_file:
+    - LICENSE-APACHE
+    - LICENSE-MIT
+  summary: hypre 3.2 with CUDA (device memory) for the CUDA build of mfem-hodgles

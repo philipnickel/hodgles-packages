@@ -3,13 +3,17 @@
 # MPI is a variant (../variants.yaml); the MPI run dependency comes from the
 # MPI package's run_exports. On linux-64 a generic and an x86-64-v3 build
 # (conda-forge's microarch-level helper); the solver picks by __archspec.
+# On linux-64 also a CUDA build (gpu: cuda, against hypre-cuda) at level 3,
+# chosen only on request (build "cuda*"; README.md "Variants").
 context:
   version: 4.10.0.post5
   mfem_version: 4.10.0
-  build: 1
+  build: 2
   # The preferred (highest) microarchitecture level gets the highest build
   # number, so the solver installs it wherever __archspec allows.
-  build_number: ${{ build + 100 * (microarch_level | int - 1) }}
+  # The CUDA build sits below every CPU build (build - 1), so a solver
+  # environment gets it only by asking for its build string.
+  build_number: ${{ build - 1 if gpu == "cuda" else build + 100 * (microarch_level | int - 1) }}
 
 package:
   name: mfem-hodgles
@@ -22,8 +26,14 @@ source:
 
 build:
   number: ${{ build_number }}
-  string: mpi_${{ mpi }}_h${{ hash }}_${{ build_number }}
-  script: build.sh
+  string: ${{ "cuda" ~ (cuda_version | replace('.', '')) ~ "_" if gpu == "cuda" else "" }}mpi_${{ mpi }}_h${{ hash }}_${{ build_number }}
+  script:
+    file: build.sh
+    env:
+      # build.sh reads the GPU architectures from here.
+      CUDA_ARCHITECTURES: ${{ cuda_arch if gpu == "cuda" else "" }}
+  skip:
+    - gpu == "cuda" and microarch_level | int == 1
 
 requirements:
   build:
@@ -38,12 +48,23 @@ requirements:
       then: gxx_linux-64 14.*
     - if: linux and x86_64
       then: x86_64-microarch-level ==${{ microarch_level }}
+    - if: gpu == "cuda"
+      then: cuda-nvcc ${{ cuda_version }}.*
     - cmake >=3.24
     - ninja
   host:
     - ${{ mpi }}
     # hypre 3.x builds carry no mpi_ string; the host MPI selects the build.
-    - hypre 3.2.*
+    - if: gpu == "cuda"
+      then: hypre-cuda 3.2.* cuda${{ cuda_version | replace('.', '') }}_mpi_${{ mpi }}_*
+      else: hypre 3.2.*
+    - if: gpu == "cuda"
+      then:
+        - cuda-version ${{ cuda_version }}.*
+        - cuda-cudart-dev
+        - libcusparse-dev
+        - libcublas-dev
+        - libcurand-dev
     - metis 5.*
     - zlib
     - libblas
@@ -54,7 +75,19 @@ requirements:
   run:
     # mfem.hpp includes the hypre, METIS, zlib, HDF5 and Caliper headers, so
     # consumers need the development packages; versions come from run_exports.
-    - hypre
+    - if: gpu == "cuda"
+      then: hypre-cuda
+      else: hypre
+    # MFEMConfig.cmake runs find_package(CUDAToolkit) and links cudart,
+    # cuSPARSE, cuBLAS and cuRAND; the consumer compiles with cuda-nvcc.
+    - if: gpu == "cuda"
+      then:
+        - cuda-version ${{ cuda_version }}.*
+        - cuda-cudart-dev
+        - libcusparse-dev
+        - libcublas-dev
+        - libcurand-dev
+        - __cuda
     - metis
     - zlib
     - hdf5 * mpi_${{ mpi }}_*
@@ -79,10 +112,17 @@ tests:
       - "! grep -q '^#define MFEM_THREAD_SAFE' $PREFIX/include/mfem/config/_config.hpp"
       - "! grep -q '^#define MFEM_USE_MPFR' $PREFIX/include/mfem/config/_config.hpp"
       - "! grep -q '^#define MFEM_USE_CEED' $PREFIX/include/mfem/config/_config.hpp"
+      - if: gpu == "cuda"
+        then: grep -q '^#define MFEM_USE_CUDA' $PREFIX/include/mfem/config/_config.hpp
+        else: "! grep -q '^#define MFEM_USE_CUDA' $PREFIX/include/mfem/config/_config.hpp"
       # MFEM's parallel VTKHDF path needs an HDF5 built with MPI-IO.
       - grep -q '^#define H5_HAVE_PARALLEL 1' $PREFIX/include/H5pubconf.h
       - cmake -S test-cmake -B build-consumer -G Ninja -DCMAKE_BUILD_TYPE=Release
       - cmake --build build-consumer
+      # The CUDA build links here, but Hypre::Init needs a GPU, which the CI
+      # runners lack: its run tests are the GPU host's (README.md "Variants").
+      - if: gpu == "cuda"
+        then: exit 0
       - env OMPI_MCA_rmaps_base_oversubscribe=1 mpiexec -n 2 build-consumer/parmesh_smoke
       # Caliper reports the consumer's MFEM_PERF_SCOPE region when enabled.
       - env OMPI_MCA_rmaps_base_oversubscribe=1 CALI_CONFIG=runtime-report mpiexec -n 2 build-consumer/parmesh_smoke > caliper-report.txt 2>&1
@@ -110,6 +150,6 @@ about:
   description: |
     Stock upstream MFEM 4.10.0 (no patches) built as a shared library with
     MPI, hypre, METIS, zlib, LAPACK, GSLIB, Caliper and parallel HDF5
-    (ParaViewHDFDataCollection). MPFR, thread safety, libCEED, OpenMP and GPU
-    backends are off. One build per MPI variant; on linux-64 a generic and an
-    x86-64-v3 build.
+    (ParaViewHDFDataCollection). MPFR, thread safety, libCEED, OpenMP and
+    HIP are off. One build per MPI variant; on linux-64 a generic and an
+    x86-64-v3 build, and a CUDA build (x86-64-v3, against hypre-cuda).
